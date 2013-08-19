@@ -530,7 +530,7 @@ class Tora {
 		}
 	}
 
-	function run( host : String, port : Int, secure : Bool, ?debug : Bool ) {
+	function run( host : String, port : Int, secure : Bool, ?debug : Bool, ?websocket : Bool ) {
 		var s = new sys.net.Socket();
 		try {
 			s.bind(new sys.net.Host(host),port);
@@ -543,6 +543,8 @@ class Tora {
 				var sock = s.accept();
 				if( debug )
 					debugQueue.add(new Client(sock, true));
+				else if( websocket )
+					handleRequest(new WSClient(sock,secure));
 				else
 					handleRequest(new Client(sock,secure));
 			}
@@ -725,6 +727,28 @@ class Tora {
 				Sys.print("</td></tr>");
 			}
 			Sys.print("</table>");
+		case "queues":
+			Sys.print("<table>");
+			Sys.print("<tr><th>Queue name</th><th># clients</th>");
+			#if redis
+			Sys.print("<th>Redis</th>");
+			#end
+			Sys.print("</tr>");
+			
+			ModToraApi.queues_lock.acquire();
+			for( q in ModToraApi.queues ){
+				q.lock.acquire();
+				Sys.print("<tr><td>"+StringTools.htmlEscape(q.name)+"</td>");
+				Sys.print("<td>"+q.clients.length+"</td>");
+				#if redis
+				Sys.print("<td>"+(q.redis==null?"":q.redis.key)+"</td>");
+				#end
+				Sys.print("</tr>");
+				q.lock.release();
+			}
+			ModToraApi.queues_lock.release();
+			Sys.print("</table>");
+
 		default:
 			throw "No such command '"+cmd+"'";
 		}
@@ -856,6 +880,7 @@ class Tora {
 		if( args[0] != null && StringTools.endsWith(args[0],"/") )
 			i++;
 		var unsafe = new List();
+		var websocket = new List();
 		inst = new Tora();
 		while( true ) {
 			var kind = args[i++];
@@ -872,6 +897,12 @@ class Tora {
 				var port = Std.parseInt(hp[1]);
 				inst.ports.push(port);
 				unsafe.add({ host : hp[0], port : port });
+			case "-websocket":
+				var hp = value().split(":");
+				if( hp.length != 2 ) throw "WebSocket format should be host:port";
+				var port = Std.parseInt(hp[1]);
+				inst.ports.push(port);
+				websocket.add({ host : hp[0], port : port });
 			case "-debugPort":
 				debugPort = Std.parseInt(value());
 			default:
@@ -883,11 +914,15 @@ class Tora {
 			log("Opening debug port on " + host + ":" + debugPort);
 			inst.debugQueue = new neko.vm.Deque();
 			inst.startup(1, inst.debugQueue);
-			neko.vm.Thread.create(inst.run.bind(host, debugPort, false, true));
+			neko.vm.Thread.create(inst.run.bind(host, debugPort, false, true, false));
 		}
 		for( u in unsafe ) {
 			log("Opening unsafe port on "+u.host+":"+u.port);
-			neko.vm.Thread.create(inst.run.bind(u.host,u.port,false, false));
+			neko.vm.Thread.create(inst.run.bind(u.host,u.port,false, false, false));
+		}
+		for( u in websocket ) {
+			log("Opening websocket port on "+u.host+":"+u.port);
+			neko.vm.Thread.create(inst.run.bind(u.host,u.port,false, false, true));
 		}
 		log("Starting Tora server on "+host+":"+port+" with "+nthreads+" threads");
 		inst.run(host,port,true);

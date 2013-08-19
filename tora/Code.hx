@@ -44,4 +44,5 @@ enum Code {
 	CTestConnect;
 	CListen;
 	CHostResolve;
+	CProtocol;
 }

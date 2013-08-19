@@ -40,6 +40,7 @@ class Client {
 	public var params : List<{ k : String, v : String }>;
 	public var hostName : String;
 	public var httpMethod : String;
+	public var protocol : String;
 	public var headersSent : Bool;
 	public var outputHeaders : List<{ code : Code, str : String }>;
 	
@@ -168,6 +169,7 @@ class Client {
 		case CParamValue: params.push({ k : key, v : data });
 		case CHostName: if( secure ) hostName = data;
 		case CHttpMethod: httpMethod = data;
+		case CProtocol: if( secure ) protocol = data;
 		case CExecute: execute = true; return true;
 		case CTestConnect: execute = false; return true;
 		case CHostResolve:
@@ -175,6 +177,7 @@ class Client {
 			ip = sock.peer().host.toString();
 			file = Tora.inst.resolveHost(hostName);
 			httpMethod = "TORA";
+			protocol = "TORA";
 			if( file == null ) {
 				sendMessage(CError,"Unknown host");
 				execute = false;

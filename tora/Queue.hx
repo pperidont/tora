@@ -29,7 +29,7 @@ class Queue<T> {
 	}
 
 	public function notify( message : T ) {
-		queue_notify(q,message);
+		queue_smart_notify(q,message,serialize);
 	}
 
 	public function count() : Int {
@@ -39,14 +39,23 @@ class Queue<T> {
 	public function stop() : Void {
 		queue_stop(q);
 	}
+
+	function serialize( d : T ){
+		return neko.NativeString.ofString(haxe.Serializer.run(d));
+	}
+
+	public function redisConnnect( host : String, port : Int ){
+		queue_redis_subscribe( q, neko.NativeString.ofString(host), port );
+	}
 	
 	public static function get<T>( name ) : Queue<T> {
 		if( queue_init == null ) {
 			queue_init = neko.Lib.load(Api.lib,"queue_init",1);
 			queue_add_handler = neko.Lib.load(Api.lib,"queue_add_handler",2);
-			queue_notify = neko.Lib.load(Api.lib,"queue_notify",2);
+			queue_smart_notify = neko.Lib.load(Api.lib,"queue_smart_notify",3);
 			queue_count = neko.Lib.load(Api.lib,"queue_count",1);
 			queue_stop = neko.Lib.load(Api.lib, "queue_stop", 1);
+			queue_redis_subscribe = neko.Lib.load(Api.lib, "queue_redis_subscribe", 3);
 		}
 		var q = new Queue();
 		q.name = name;
@@ -56,7 +65,8 @@ class Queue<T> {
 
 	static var queue_init;
 	static var queue_add_handler;
-	static var queue_notify;
+	static var queue_smart_notify;
 	static var queue_count;
 	static var queue_stop;
+	static var queue_redis_subscribe;
 }
