@@ -356,6 +356,12 @@ class Tora {
 		return t;
 	}
 
+	public function rmdelay( t : Timer ){
+		delayLock.acquire();
+		delayQueue.remove(t);
+		delayLock.release();
+	}
+
 	public function getFile( file : String ) {
 		var f = files.get(file);
 		if( f != null )
@@ -782,6 +788,7 @@ class Tora {
 				cacheCount : Lambda.count(f.cache),
 				bytes : f.bytes,
 				time : f.time,
+				cron: f.cron==null ? null : f.cron.time,
 			};
 			finf.push(f);
 		}

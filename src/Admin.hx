@@ -167,11 +167,11 @@ class Admin {
 		tab("Files",function() {
 			infos.files.sort(function(f1,f2) return (f2.loads + f2.cacheHits) - (f1.loads + f1.cacheHits));
 			table(
-				["File","Loads","Cache Hits","Instances","KB/hit","ms/hit"],
+				["File","Loads","Cache Hits","Instances","KB/hit","ms/hit","Cron"],
 				infos.files,
 				function(f:FileInfos) : Array<Dynamic> {
 					var tot = f.loads + f.cacheHits;
-					return [f.file,f.loads,f.cacheHits,f.cacheCount,fmt(f.bytes/(1024.0 * tot)),fmt(f.time*1000/tot)];
+					return [f.file,f.loads,f.cacheHits,f.cacheCount,fmt(f.bytes/(1024.0 * tot)),fmt(f.time*1000/tot),f.cron==null?"":(fmt(f.cron)+"s")];
 				}
 			);
 		});

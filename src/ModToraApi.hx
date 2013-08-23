@@ -175,11 +175,18 @@ class ModToraApi extends ModNekoApi {
 		return !client.secure;
 	}
 
-	function tora_set_cron( url : neko.NativeString, delay : Float ) {
-		var url = neko.NativeString.toString(url);
+	function tora_set_cron( url : neko.NativeString, delay : Null<Float> ) {
 		var file = client.file, host = client.hostName;
-		var callb = function() Tora.inst.handleRequest(new NullClient(file, host, url));
 		var f = Tora.inst.getFile(client.file);
+		if( delay == null || url == null ){
+			if( f.cron != null ){
+				Tora.inst.rmdelay(f.cron);
+				f.cron = null;
+			}
+			return;
+		}
+		var url = neko.NativeString.toString(url);
+		var callb = function() Tora.inst.handleRequest(new NullClient(file, host, url));
 		if( f.cron == null )
 			f.cron = Tora.inst.delay(delay, callb, true);
 		else {

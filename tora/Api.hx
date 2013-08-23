@@ -36,6 +36,10 @@ class Api {
 		neko.Lib.load(lib, "tora_set_cron", 2)(untyped url.__s, delay);
 	}
 
+	public static function stopCron() {
+		neko.Lib.load(lib, "tora_set_cron", 2)(null,null);
+	}
+
 	public static function getExports( host : String ) : Dynamic {
 		return neko.Lib.load(lib, "tora_get_exports", 1)(untyped host.__s);
 	}

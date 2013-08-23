@@ -32,6 +32,7 @@ typedef FileInfos = {
 	var cacheCount : Int;
 	var bytes : Float;
 	var time : Float;
+	var cron : Null<Float>;
 }
 
 typedef Infos = {
