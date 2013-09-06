@@ -742,7 +742,9 @@ class Tora {
 			Sys.print("</tr>");
 			
 			ModToraApi.queues_lock.acquire();
-			for( q in ModToraApi.queues ){
+			var ql = Lambda.list(ModToraApi.queues);
+			ModToraApi.queues_lock.release();
+			for( q in ql ){
 				q.lock.acquire();
 				Sys.print("<tr><td>"+StringTools.htmlEscape(q.name)+"</td>");
 				Sys.print("<td>"+q.clients.length+"</td>");
@@ -752,7 +754,6 @@ class Tora {
 				Sys.print("</tr>");
 				q.lock.release();
 			}
-			ModToraApi.queues_lock.release();
 			Sys.print("</table>");
 
 		default:

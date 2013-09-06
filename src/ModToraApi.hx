@@ -496,8 +496,8 @@ class ModToraApi extends ModNekoApi {
 			redis.set(k,manager);
 		}
 		if( q.redis != null && q.redis != manager ){
-			q.lock.release();
 			redis_lock.release();
+			q.lock.release();
 			throw neko.NativeString.ofString("queue redis server mismatch");
 		}
 		
