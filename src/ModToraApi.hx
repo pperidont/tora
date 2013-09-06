@@ -84,7 +84,8 @@ class ModuleContext {
 	}
 	
 	public function restore() {
-		api.client = oldClient;
+		if( api != null )
+			api.client = oldClient;
 		// put back used instances to cache
 		if( instances != null )
 			for( i in instances )
