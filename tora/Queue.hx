@@ -44,7 +44,7 @@ class Queue<T> {
 		return neko.NativeString.ofString(haxe.Serializer.run(d));
 	}
 
-	public function redisConnnect( host : String, port : Int ){
+	public function redisConnect( host : String, port : Int ){
 		queue_redis_subscribe( q, neko.NativeString.ofString(host), port );
 	}
 	
