@@ -230,6 +230,21 @@ class WSClient extends Client {
 		if( headersSent ) return;
 		headersSent = true;
 
+		var rcode = null;
+		for( h in outputHeaders ){
+			if( h.code == CReturnCode ){
+				rcode = h.str;
+				break;
+			}
+		}
+
+		if( rcode != null ){
+			sendHead("HTTP/1.1 "+rcode+" Access denied");
+			sendHead("Connection: close");
+			sendHead("");
+			return;
+		}
+
 		sendHead("HTTP/1.1 101 Switching Protocols");
 		sendHead("Upgrade: websocket");
 		sendHead("Connection: Upgrade");
