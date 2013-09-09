@@ -143,7 +143,6 @@ class WSClient extends Client {
 				}
 			case 8: // close
 				send("",8);
-				execute = true;
 				needClose = true;
 
 			case 9: // ping

@@ -363,6 +363,11 @@ class ModToraApi extends ModNekoApi {
 		client.writeLock.release();
 		q.lock.acquire();
 		q.clients.add({ c : client, h : h, cl : cl });
+		if( q.redis != null && q.clients.length == 1 ){
+			q.redis.lock.acquire();
+			q.redis.addQueue( q );
+			q.redis.lock.release();
+		}
 		q.lock.release();
 	}
 
@@ -466,16 +471,7 @@ class ModToraApi extends ModNekoApi {
 			return;
 		var manager = q.redis;
 		manager.lock.acquire();
-		q.redis.removeQueue( q );
-		q.redis = null;
-		
-		if( !manager.queues.iterator().hasNext() ){
-			redis_lock.acquire();
-			manager.close();
-			redis.remove(manager.key);
-			redis_lock.release();
-		}
-
+		manager.removeQueue( q );
 		manager.lock.release();
 		#end
 	}
@@ -485,6 +481,8 @@ class ModToraApi extends ModNekoApi {
 	static var redis_lock = new neko.vm.Mutex();
 
 	function queue_redis_subscribe( q : Queue, host : neko.NativeString, port: Int ){
+		if( port == null )
+			port = 6379;
 		var host = neko.NativeString.toString(host);
 		var k = host+":"+port;
 
@@ -506,7 +504,8 @@ class ModToraApi extends ModNekoApi {
 		redis_lock.release();
 
 		if( q.redis == null ){
-			manager.addQueue( q );
+			if( q.clients.length > 0 )
+				manager.addQueue( q );
 			q.redis = manager;
 		}
 		manager.lock.release();

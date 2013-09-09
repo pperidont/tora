@@ -258,11 +258,15 @@ class RedisManager {
 	}
 
 	public function removeQueue( q ){
+		if( !queues.exists(q.name) )
+			return;
 		buffer.add(["UNSUBSCRIBE",q.name]);
 		queues.remove( q.name );
 	}
 	
 	public function addQueue( q ){
+		if( queues.exists(q.name) )
+			return;
 		queues.set( q.name, q );
 		buffer.add( ["SUBSCRIBE",q.name] );
 	}
