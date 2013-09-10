@@ -755,6 +755,41 @@ class Tora {
 				q.lock.release();
 			}
 			Sys.print("</table>");
+		case "clients":
+			Sys.print("<table>");
+			Sys.print("<tr><th>IP</th><th>Protocol</th><th>Host</th><th>URL</th><th>User-Agent</th></tr>");
+
+			ModToraApi.queues_lock.acquire();
+			var ql = Lambda.list(ModToraApi.queues);
+			ModToraApi.queues_lock.release();
+
+			var kc = new Map<Client,Client>();
+			
+			for( q in ql ){
+				q.lock.acquire();
+				var cl = Lambda.list(q.clients);
+				q.lock.release();
+
+				for( c in cl ){
+					var c = c.c;
+					if( kc.exists(c) )
+						continue;
+					kc.set(c,c);
+					
+					var ua = null;
+					try {
+						for( h in c.headers ){
+							if( h.k == "User-Agent" ){
+								ua = h.v;
+								break;
+							}
+						}
+					}catch(e : Dynamic ){
+					}
+					Sys.print('<tr><td>${c.ip}</td><td>${c.protocol}</td><td>${c.hostName}</td><td>${c.uri}</td><td>$ua</td></tr>');
+				}
+			}
+			Sys.print("</table>");
 
 		default:
 			throw "No such command '"+cmd+"'";

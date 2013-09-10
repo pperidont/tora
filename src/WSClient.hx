@@ -237,16 +237,18 @@ class WSClient extends Client {
 			}
 		}
 
+		var heads = new List();
+
 		if( rcode != null ){
-			sendHead("HTTP/1.1 "+rcode+" Access denied");
-			sendHead("Connection: close");
-			sendHead("");
+			heads.add("HTTP/1.1 "+rcode+" Access denied");
+			heads.add("Connection: close");
+			sendHeads( heads );
 			return;
 		}
 
-		sendHead("HTTP/1.1 101 Switching Protocols");
-		sendHead("Upgrade: websocket");
-		sendHead("Connection: Upgrade");
+		heads.add("HTTP/1.1 101 Switching Protocols");
+		heads.add("Upgrade: websocket");
+		heads.add("Connection: Upgrade");
 		var key = getHeader("Sec-WebSocket-Key");
 		if( key == null )
 			throw "Missing Sec-WebSocket-Key header";
@@ -255,7 +257,7 @@ class WSClient extends Client {
 		accept = haxe.crypto.BaseCode.decode(accept,"0123456789abcdef");
 		accept = haxe.crypto.BaseCode.encode(accept,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
-		sendHead("Sec-WebSocket-Accept: "+accept+"=");
+		heads.add("Sec-WebSocket-Accept: "+accept+"=");
 
 		var k = null;
 		for( h in outputHeaders ){
@@ -263,16 +265,16 @@ class WSClient extends Client {
 			case CHeaderKey: k = h.str;
 			case CHeaderValue,CHeaderAddValue:
 				if( k != null )
-					sendHead(k+": "+h.str);
+					heads.add(k+": "+h.str);
 			default:
 			}
 		}
 
-		sendHead("");
+		sendHeads( heads );
 	}
 
-	inline function sendHead( s : String ){
-		sendData(s+"\r\n");
+	inline function sendHeads( l : List<String> ){
+		sendData( l.join("\r\n") + "\r\n\r\n" );
 	}
 
 	function sendData(str){
