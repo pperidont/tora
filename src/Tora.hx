@@ -548,7 +548,7 @@ class Tora {
 			while( running ) {
 				var sock = s.accept();
 				if( !secure )
-					sock.setKeepAlive( 60 );
+					sock.setKeepAlive( true, 60, 20, 3 );
 				if( debug )
 					debugQueue.add(new Client(sock, true));
 				else if( websocket )
