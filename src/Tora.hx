@@ -644,7 +644,7 @@ class Tora {
 				for( h in c.headers )
 					inf.push("\t" + h.k + ": " + h.v);
 				try {
-					var s = untyped haxe.Stack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
+					var s = untyped haxe.CallStack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
 					inf.push("Stack:");
 					var selts = haxe.CallStack.toString(s).split("\n");
 					if( selts[0] == "" ) selts.shift();
