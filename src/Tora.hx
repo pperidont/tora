@@ -65,6 +65,7 @@ class Tora {
 	var redirect : Dynamic;
 	var set_trusted : Dynamic;
 	var enable_jit : Bool -> Bool;
+	var socket_set_keepalive : Null<Dynamic -> Bool -> Int -> Int -> Int -> Bool>;
 	var running : Bool;
 	var jit : Bool;
 	var hosts : Map<String,String>;
@@ -99,6 +100,7 @@ class Tora {
 		redirect = neko.Lib.load("std","print_redirect",1);
 		set_trusted = neko.Lib.load("std","set_trusted",1);
 		enable_jit = neko.Lib.load("std","enable_jit",1);
+		socket_set_keepalive = try neko.Lib.load("std","socket_set_keepalive",5) catch( e : Dynamic ) null;
 		jit = (enable_jit(null) == true);
 		neko.vm.Thread.create(startup.bind(nthreads,clientQueue));
 		neko.vm.Thread.create(socketsLoop);
@@ -547,8 +549,9 @@ class Tora {
 		try {
 			while( running ) {
 				var sock = s.accept();
-				if( !secure )
-					sock.setKeepAlive( true, 60, 20, 3 );
+				if( !secure && socket_set_keepalive != null )
+					socket_set_keepalive( untyped sock.__s, true, 60, 20, 3 );
+
 				if( debug )
 					debugQueue.add(new Client(sock, true));
 				else if( websocket )
@@ -644,7 +647,7 @@ class Tora {
 				for( h in c.headers )
 					inf.push("\t" + h.k + ": " + h.v);
 				try {
-					var s = untyped haxe.Stack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
+					var s = untyped haxe.CallStack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
 					inf.push("Stack:");
 					var selts = haxe.CallStack.toString(s).split("\n");
 					if( selts[0] == "" ) selts.shift();
@@ -844,7 +847,7 @@ class Tora {
 			files : finf,
 			totalHits : totalHits,
 			recentHits : recentHits,
-			queue : totalHits - tot,
+			queue : queueSize,
 			activeConnections : activeConnections,
 			upTime : haxe.Timer.stamp() - startTime,
 			jit : jit,
