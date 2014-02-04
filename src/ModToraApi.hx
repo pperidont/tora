@@ -128,6 +128,8 @@ class ModuleContext {
 		// TODO
 		try {
 			if( curClass != q.cl ) {
+				if( curModule == null )
+					return false;
 				curClass = q.cl;
 				var pl = Reflect.field(curModule.exportsTable(), "__classes");
 				for( p in q.cl.split(".") )
