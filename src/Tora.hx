@@ -150,14 +150,15 @@ class Tora {
 				if( rem < 0 ) {
 					if( toExecute == null ) toExecute = new List();
 					toExecute.add(d.callb);
-					if( d.repeat )
+					if( d.repeat ){
 						d.elapsed -= d.time;
-					else
+						rem = d.time - d.elapsed;
+					}else{
 						delayQueue.remove(d);
-				} else {
-					if( nextDelay == null || nextDelay > rem )
-						nextDelay = rem;
+					}
 				}
+				if( rem > 0 && (nextDelay == null || nextDelay > rem) )
+					nextDelay = rem;
 			}
 			delayLock.release();
 			if( toExecute != null )
