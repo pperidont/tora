@@ -69,7 +69,8 @@ class RedisManager {
 			while( true ){
 				if( closing )
 					break;
-				var resp = null;
+				var resps = new List() ;
+
 				try {
 					if( cnx == null )
 						throw "Eof";
@@ -77,9 +78,9 @@ class RedisManager {
 						var a = buffer.pop(false);
 						if( a == null )
 							break;
-						cnx.command(a.shift(),a);
+						resps.add(cnx.command(a.shift(),a));
 					}
-					resp = cnx.receive();
+					resps.add(cnx.receive()) ; 
 				}catch( e : Dynamic ){
 					switch( Std.string(e) ){
 						case "Blocked":
@@ -113,12 +114,13 @@ class RedisManager {
 							neko.Lib.rethrow(e);
 					}
 				}
-				if( resp != null ){
+				for (resp in resps) {
+
 					switch( resp ){
 						case R_Multi(a):
 							if( redis.Connection.str(a[0]) == "message" )
 								onMessage(redis.Connection.str(a[1]),redis.Connection.str(a[2]));
-						default: //
+						default: 
 					}
 				}
 			}
