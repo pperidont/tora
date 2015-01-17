@@ -19,7 +19,7 @@ import tora.Code;
 
 class Protocol {
 
-	var sock : #if neko sys.net.Socket #else flash.net.Socket #end;
+	var sock : #if (flash || openfl) flash.net.Socket #elseif sys sys.net.Socket #end;
 	var headers : Array<{ key : String, value : String }>;
 	var params : Array<{ key : String, value : String }>;
 	var uri : String;
@@ -27,7 +27,7 @@ class Protocol {
 	var port : Int;
 	var lastMessage : Code;
 	var dataLength : Int;
-	#if neko
+	#if !(flash || openfl)
 	var tmpOut : haxe.io.BytesOutput;
 	#end
 
@@ -73,13 +73,13 @@ class Protocol {
 	}
 	
 	public function wait() {
-		#if neko
+		#if !(flash || openfl)
 		onSocketData(null);
 		#end
 	}
 
 	public function connect() {
-		#if flash
+		#if (flash || openfl)
 		sock = new flash.net.Socket();
 		sock.addEventListener(flash.events.Event.CONNECT,onConnect);
 		sock.addEventListener(flash.events.Event.CLOSE,onClose);
@@ -87,7 +87,7 @@ class Protocol {
         sock.addEventListener(flash.events.SecurityErrorEvent.SECURITY_ERROR, onClose);
 		sock.addEventListener(flash.events.ProgressEvent.SOCKET_DATA,onSocketData);
 		sock.connect(host,port);
-		#elseif neko
+		#elseif sys
 		sock = new sys.net.Socket();
 		sock.connect(new sys.net.Host(host),port);
 		sock.setFastSend(true);
@@ -97,7 +97,7 @@ class Protocol {
 
 	public function close() {
 		if( sock == null ) return;
-		#if flash
+		#if (flash || openfl)
 		sock.removeEventListener(flash.events.Event.CLOSE,onClose);
 		#end
 		try sock.close() catch( e : Dynamic ) {};
@@ -105,14 +105,14 @@ class Protocol {
 	}
 
 	function send( code : Code, data : String ) {
-		#if flash
+		#if (flash || openfl)
 		sock.writeByte(Type.enumIndex(code) + 1);
 		var length = data.length;
 		sock.writeByte(length & 0xFF);
 		sock.writeByte((length >> 8) & 0xFF);
 		sock.writeByte(length >> 16);
 		sock.writeUTFBytes(data);
-		#elseif neko
+		#elseif sys
 		var i = tmpOut;
 		i.writeByte(Type.enumIndex(code) + 1);
 		var length = data.length;
@@ -125,7 +125,7 @@ class Protocol {
 
 	function onConnect(_) {
 		if( sock == null ) return;
-		#if neko
+		#if !(flash || openfl)
 		tmpOut = new haxe.io.BytesOutput();
 		#end
 		send(CHostResolve,host);
@@ -143,10 +143,10 @@ class Protocol {
 		}
 		send(CGetParams,get);
 		send(CExecute,"");
-		#if flash
+		#if (flash || openfl)
 		sock.flush();
-		#else
-		sock.write(neko.Lib.stringReference(tmpOut.getBytes()));
+		#elseif sys
+		sock.write(tmpOut.getBytes().toString());
 		tmpOut = null;
 		#end
 	}
@@ -156,9 +156,9 @@ class Protocol {
 	}
 
 	function onSocketData(_) {
-		while( true ) {
+		while ( true ) {
 			if( sock == null ) return;
-			#if flash
+			#if (flash || openfl)
 			if( lastMessage == null ) {
 				if( sock.bytesAvailable < 4 ) return;
 				var code = sock.readUnsignedByte() - 1;
@@ -180,7 +180,7 @@ class Protocol {
 			if( dataLength > 0 )
 				sock.readBytes(bytes, 0, dataLength);
 			var bytes = haxe.io.Bytes.ofData(bytes);
-			#elseif neko
+			#elseif sys
 			var i = sock.input;
 			var code = i.readByte() - 1;
 			lastMessage = CODES[code];
@@ -203,7 +203,7 @@ class Protocol {
 				error(bytes.toString());
 				return;
 			case CListen,CExecute:
-				#if neko
+				#if !(flash || openfl)
 				break;
 				#end
 			default:
@@ -219,7 +219,7 @@ class Protocol {
 		onError(msg);
 	}
 
-	#if flash
+	#if (flash || openfl)
 	function onClose( e : flash.events.Event ) {
 		try sock.close() catch( e : Dynamic ) {};
 		sock = null;
