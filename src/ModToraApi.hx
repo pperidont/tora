@@ -27,6 +27,9 @@ typedef Queue = {
 	var name : String;
 	var lock : neko.vm.Mutex;
 	var clients : List<{ c : Client, h : Dynamic, cl : String }>;
+	#if redis
+	var redis : Null<RedisManager>;
+	#end
 }
 
 class NullClient extends Client {
@@ -66,25 +69,35 @@ class ModuleContext {
 	var curModule : neko.vm.Module;
 	var curFile : String;
 	var instances : Map<String,ModToraApi>;
+	var redirected : Bool;
+
+	static var redirect = neko.Lib.load("std","print_redirect",1);
 	
-	public function new(api) {
-		this.api = api;
-		oldClient = api.client;
-		curFile = api.client.file;
-		curModule = api.module;
+	public function new(?api) {
+		if( api != null ){
+			this.api = api;
+			oldClient = api.client;
+			curFile = api.client.file;
+			curModule = api.module;
+		}
+		redirected = false;
 	}
 	
 	public function restore() {
-		api.client = oldClient;
+		if( api != null )
+			api.client = oldClient;
 		// put back used instances to cache
 		if( instances != null )
 			for( i in instances )
-				i.client.onRequestDone(null);
+				if( i.client != null ) // TODO client.null ?
+					i.client.onRequestDone(null);
+		if( redirected )
+			redirect(null);
 	}
 	
 	public function initHandler( q : { c : Client, cl : String, h : Dynamic } ) {
 		if( q.c.file != curFile ) {
-			if( q.c.file == oldClient.file ) {
+			if( oldClient != null && q.c.file == oldClient.file ) {
 				curFile = oldClient.file;
 				curModule = api.module;
 			} else {
@@ -98,17 +111,34 @@ class ModuleContext {
 					if( inst == null )
 						return null;
 					instances.set(q.c.file, inst);
+					if( api == null ){
+						api = inst;
+						oldClient = api.client;
+						curFile = api.client.file;
+						curModule = api.module;
+
+						redirect(api.print);
+						redirected = true;
+					}
 				}
 				
 			}
 			curClass = null;
 		}
-		if( curClass != q.cl ) {
-			curClass = q.cl;
-			var pl = Reflect.field(curModule.exportsTable(), "__classes");
-			for( p in q.cl.split(".") )
-				pl = Reflect.field(pl, p);
-			curProto = pl == null ? null : pl.prototype;
+		try {
+			if( curClass != q.cl ) {
+				if( curModule == null )
+					return false;
+				curClass = q.cl;
+				var pl = Reflect.field(curModule.exportsTable(), "__classes");
+				for( p in q.cl.split(".") )
+					pl = Reflect.field(pl, p);
+				curProto = pl == null ? null : pl.prototype;
+			}
+		}catch( e : Dynamic ){
+			Tora.log("ERROR IN initHandler: "+Std.string(e));
+			Tora.log(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+			neko.Lib.rethrow(e);
 		}
 		if( curProto == null )
 			return false;
@@ -147,11 +177,18 @@ class ModToraApi extends ModNekoApi {
 		return !client.secure;
 	}
 
-	function tora_set_cron( url : neko.NativeString, delay : Float ) {
-		var url = neko.NativeString.toString(url);
+	function tora_set_cron( url : neko.NativeString, delay : Null<Float> ) {
 		var file = client.file, host = client.hostName;
-		var callb = function() Tora.inst.handleRequest(new NullClient(file, host, url));
 		var f = Tora.inst.getFile(client.file);
+		if( delay == null || url == null ){
+			if( f.cron != null ){
+				Tora.inst.rmdelay(f.cron);
+				f.cron = null;
+			}
+			return;
+		}
+		var url = neko.NativeString.toString(url);
+		var callb = function() Tora.inst.handleRequest(new NullClient(file, host, url));
 		if( f.cron == null )
 			f.cron = Tora.inst.delay(delay, callb, true);
 		else {
@@ -287,8 +324,8 @@ class ModToraApi extends ModNekoApi {
 
 	// queues
 
-	static var queues = new Map<String,Queue>();
-	static var queues_lock = new neko.vm.Mutex();
+	public static var queues = new Map<String,Queue>();
+	public static var queues_lock = new neko.vm.Mutex();
 
 	function queue_init( name : neko.NativeString ) : Queue {
 		var name = neko.NativeString.toString(name);
@@ -299,6 +336,7 @@ class ModToraApi extends ModNekoApi {
 				name : name,
 				lock : new neko.vm.Mutex(),
 				clients : new List(),
+				#if redis redis: null,#end
 			};
 			queues.set(name,q);
 		}
@@ -326,34 +364,57 @@ class ModToraApi extends ModNekoApi {
 		client.writeLock.release();
 		q.lock.acquire();
 		q.clients.add({ c : client, h : h, cl : cl });
+		#if redis
+		if( q.redis != null && q.clients.length == 1 ){
+			q.redis.lock.acquire();
+			q.redis.addQueue( q );
+			q.redis.lock.release();
+		}
+		#end
 		q.lock.release();
 	}
+
+	function queue_notify( q : Queue, message : Dynamic ){
+		return queue_smart_notify(q,message,function(_){
+			throw neko.NativeString.ofString("unsupported, upgrade your tora lib");
+			return null;
+		});
+	}
 	
-	function queue_notify( q : Queue, message : Dynamic ) {
+	function queue_smart_notify( q : Queue, message : Dynamic, serialize : Dynamic -> neko.NativeString ) {
 		q.lock.acquire();
-		var ctx = new ModuleContext(this);
-		for( qc in q.clients ) {
-			if( qc.c.needClose ) continue;
-			if( !ctx.initHandler(qc) )
-				qc.c.needClose = true;
-			try {
-				qc.h.onNotify(message);
-			} catch( e : Dynamic ) {
-				var data = try {
-					var stack = haxe.CallStack.callStack().concat(haxe.CallStack.exceptionStack());
-					Std.string(e) + haxe.CallStack.toString(stack);
-				} catch( _ : Dynamic ) "???";
-				try {
-					qc.c.sendMessage(tora.Code.CError,data);
-				} catch( _ : Dynamic ) {
+		#if redis
+		if( q.redis != null ){
+			var msg = neko.NativeString.toString( serialize(message) );
+			q.redis.pbuffer.add(["PUBLISH",q.name,msg]);
+		}else{
+		#else
+		if( true ){
+		#end
+			var ctx = new ModuleContext(this);
+			for( qc in q.clients ) {
+				if( qc.c.needClose ) continue;
+				if( !ctx.initHandler(qc) )
 					qc.c.needClose = true;
+				try {
+					qc.h.onNotify(message);
+				} catch( e : Dynamic ) {
+					var data = try {
+						var stack = haxe.CallStack.callStack().concat(haxe.CallStack.exceptionStack());
+						Std.string(e) + haxe.CallStack.toString(stack);
+					} catch( _ : Dynamic ) "???";
+					try {
+						qc.c.sendMessage(tora.Code.CError,data);
+					} catch( _ : Dynamic ) {
+						qc.c.needClose = true;
+					}
 				}
+				ctx.resetHandler(qc);
+				if( qc.c.needClose )
+					Tora.inst.close(qc.c, true);
 			}
-			ctx.resetHandler(qc);
-			if( qc.c.needClose )
-				Tora.inst.close(qc.c, true);
+			ctx.restore();
 		}
-		ctx.restore();
 		q.lock.release();
 	}
 	
@@ -378,6 +439,7 @@ class ModToraApi extends ModNekoApi {
 							Tora.log(data + stack);
 						}
 				}
+				queue_check(q);
 				q.lock.release();
 			}
 		}
@@ -393,6 +455,7 @@ class ModToraApi extends ModNekoApi {
 		for( qc in q.clients )
 			if( qc.c == client )
 				q.clients.remove(qc);
+		queue_check(q);
 		q.lock.release();
 		
 		client.writeLock.acquire();
@@ -404,5 +467,57 @@ class ModToraApi extends ModNekoApi {
 			Tora.inst.close(client, true);
 		}
 	}
+
+	function queue_check( q : Queue ){
+		#if redis
+		if( q.clients.length > 0 || q.redis == null )
+			return;
+		var manager = q.redis;
+		manager.lock.acquire();
+		manager.removeQueue( q );
+		manager.lock.release();
+		#end
+	}
+
+	#if redis
+	static var redis = new Map<String,RedisManager>();
+	static var redis_lock = new neko.vm.Mutex();
+
+	function queue_redis_subscribe( q : Queue, host : neko.NativeString, port: Int ){
+		if( port == null )
+			port = 6379;
+		var host = neko.NativeString.toString(host);
+		var k = host+":"+port;
+
+		q.lock.acquire();
+		redis_lock.acquire();
+
+		var manager = redis.get(k);
+		if( q.redis == null && manager == null ){
+			manager = new RedisManager(k,host,port);
+			redis.set(k,manager);
+		}
+		if( q.redis != null && q.redis != manager ){
+			redis_lock.release();
+			q.lock.release();
+			throw neko.NativeString.ofString("queue redis server mismatch");
+		}
+		
+		manager.lock.acquire();
+		redis_lock.release();
+
+		if( q.redis == null ){
+			if( q.clients.length > 0 )
+				manager.addQueue( q );
+			q.redis = manager;
+		}
+		manager.lock.release();
+		q.lock.release();
+	}
+
+	#end
+
+
+
 
 }

@@ -53,6 +53,7 @@ enum ToraMode {
 	TMDebug;
 	TMUnsafe;
 	TMFastCGI;
+	TMWebSocket;
 }
 
 class Tora {
@@ -155,14 +156,15 @@ class Tora {
 				if( rem < 0 ) {
 					if( toExecute == null ) toExecute = new List();
 					toExecute.add(d.callb);
-					if( d.repeat )
+					if( d.repeat ){
 						d.elapsed -= d.time;
-					else
+						rem = d.time - d.elapsed;
+					}else{
 						delayQueue.remove(d);
-				} else {
-					if( nextDelay == null || nextDelay > rem )
-						nextDelay = rem;
+					}
 				}
+				if( rem > 0 && (nextDelay == null || nextDelay > rem) )
+					nextDelay = rem;
 			}
 			delayLock.release();
 			if( toExecute != null )
@@ -363,6 +365,12 @@ class Tora {
 		return t;
 	}
 
+	public function rmdelay( t : Timer ){
+		delayLock.acquire();
+		delayQueue.remove(t);
+		delayLock.release();
+	}
+
 	public function getFile( file : String ) {
 		var f = files.get(file);
 		if( f != null )
@@ -537,7 +545,7 @@ class Tora {
 		}
 	}
 
-	function run( host : String, port : Int, mode : ToraMode ) { // secure : Bool, ?debug : Bool ) {
+	function run( host : String, port : Int, mode : ToraMode ) {
 		var s = new sys.net.Socket();
 		try {
 			s.bind(new sys.net.Host(host),port);
@@ -554,6 +562,7 @@ class Tora {
 					case TMUnsafe:	handleRequest(new Client(sock, false));
 					case TMRegular:	handleRequest(new Client(sock, true));
 					case TMFastCGI: handleRequest(new fcgi.ClientFcgi(sock, true));
+					case TMWebSocket: handleRequest(new WSClient(sock, false));
 				}
 			}
 		} catch( e : Dynamic ) {
@@ -644,7 +653,7 @@ class Tora {
 				for( h in c.headers )
 					inf.push("\t" + h.k + ": " + h.v);
 				try {
-					var s = untyped haxe.Stack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
+					var s = untyped haxe.CallStack.makeStack(neko.Lib.load("std", "thread_stack", 1)(untyped t.t.handle));
 					inf.push("Stack:");
 					var selts = haxe.CallStack.toString(s).split("\n");
 					if( selts[0] == "" ) selts.shift();
@@ -735,6 +744,64 @@ class Tora {
 				Sys.print("</td></tr>");
 			}
 			Sys.print("</table>");
+		case "queues":
+			Sys.print("<table>");
+			Sys.print("<tr><th>Queue name</th><th># clients</th>");
+			#if redis
+			Sys.print("<th>Redis</th>");
+			#end
+			Sys.print("</tr>");
+			
+			ModToraApi.queues_lock.acquire();
+			var ql = Lambda.list(ModToraApi.queues);
+			ModToraApi.queues_lock.release();
+			for( q in ql ){
+				q.lock.acquire();
+				Sys.print("<tr><td>"+StringTools.htmlEscape(q.name)+"</td>");
+				Sys.print("<td>"+q.clients.length+"</td>");
+				#if redis
+				Sys.print("<td>"+(q.redis==null?"":q.redis.key)+"</td>");
+				#end
+				Sys.print("</tr>");
+				q.lock.release();
+			}
+			Sys.print("</table>");
+		case "clients":
+			Sys.print("<table>");
+			Sys.print("<tr><th>IP</th><th>Host</th><th>URL</th><th>User-Agent</th></tr>");
+
+			ModToraApi.queues_lock.acquire();
+			var ql = Lambda.list(ModToraApi.queues);
+			ModToraApi.queues_lock.release();
+
+			var kc = new Map<Client,Client>();
+			
+			for( q in ql ){
+				q.lock.acquire();
+				var cl = Lambda.list(q.clients);
+				q.lock.release();
+
+				for( c in cl ){
+					var c = c.c;
+					if( kc.exists(c) )
+						continue;
+					kc.set(c,c);
+					
+					var ua = null;
+					try {
+						for( h in c.headers ){
+							if( h.k == "User-Agent" ){
+								ua = h.v;
+								break;
+							}
+						}
+					}catch(e : Dynamic ){
+					}
+					Sys.print('<tr><td>${c.ip}</td><td>${c.hostName}</td><td>${c.uri}</td><td>$ua</td></tr>');
+				}
+			}
+			Sys.print("</table>");
+
 		default:
 			throw "No such command '"+cmd+"'";
 		}
@@ -768,6 +835,7 @@ class Tora {
 				cacheCount : Lambda.count(f.cache),
 				bytes : f.bytes,
 				time : f.time,
+				cron: f.cron==null ? null : f.cron.time,
 			};
 			finf.push(f);
 		}
@@ -785,7 +853,7 @@ class Tora {
 			files : finf,
 			totalHits : totalHits,
 			recentHits : recentHits,
-			queue : totalHits - tot,
+			queue : queueSize,
 			activeConnections : activeConnections,
 			upTime : haxe.Timer.stamp() - startTime,
 			jit : jit,
@@ -867,6 +935,7 @@ class Tora {
 		if( args[0] != null && StringTools.endsWith(args[0],"/") )
 			i++;
 		var unsafe = new List();
+		var websocket = new List();
 		inst = new Tora();
 		while( true ) {
 			var kind = args[i++];
@@ -883,6 +952,13 @@ class Tora {
 				var port = Std.parseInt(hp[1]);
 				inst.ports.push(port);
 				unsafe.add( { host : hp[0], port : port } );
+
+			case "-websocket":
+				var hp = value().split(":");
+				if( hp.length != 2 ) throw "WebSocket format should be host:port";
+				var port = Std.parseInt(hp[1]);
+				inst.ports.push(port);
+				websocket.add({ host : hp[0], port : port });
 			
 			case "-debugPort":
 				debugPort = Std.parseInt(value());
@@ -904,6 +980,10 @@ class Tora {
 		for( u in unsafe ) {
 			log("Opening unsafe port on "+u.host+":"+u.port);
 			neko.vm.Thread.create(inst.run.bind(u.host, u.port, TMUnsafe));
+		}
+		for( u in websocket ) {
+			log("Opening websocket port on "+u.host+":"+u.port);
+			neko.vm.Thread.create(inst.run.bind(u.host,u.port, TMWebSocket));
 		}
 		log("Starting Tora server on " + host + ":" + port + " with " + nthreads + " threads");
 		

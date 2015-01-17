@@ -14,5 +14,9 @@ class Handler<T> {
 	public function sendData( d : String ) {
 		Sys.print(d);
 	}
+
+	function unserialize( nstr : neko.NativeString ) : Dynamic {
+		return haxe.Unserializer.run( neko.NativeString.toString(nstr) );
+	}
 	
 }
