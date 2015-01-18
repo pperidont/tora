@@ -25,7 +25,7 @@ class Client {
 		try neko.Lib.load("std","socket_set_keepalive",5) catch( e : Dynamic ) null;
 
 	// protocol
-	public var sock : sys.net.Socket;
+	public var sock : AbstractSocket;
 	public var data : String;
 	public var bytes : Int;
 	public var dataBytes : Int;

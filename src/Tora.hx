@@ -205,7 +205,7 @@ class Tora {
 				}
 			}
 			if( changed ) {
-				poll.prepare(socks,new Array());
+				poll.prepare(cast socks,new Array());
 				activeConnections = socks.length;
 				changed = false;
 			}
@@ -545,8 +545,19 @@ class Tora {
 		}
 	}
 
-	function run( host : String, port : Int, mode : ToraMode ) {
-		var s = new sys.net.Socket();
+	function run( host : String, port : Int, mode : ToraMode, tls: Null<{key: String, cert: String}> ) {
+		var s : AbstractSocket;
+		if( tls != null ){
+			#if hxssl
+			var ss = new neko.tls.Socket();
+			ss.useCertificate( tls.cert, tls.key );
+			s = ss;
+			#else
+			throw "Please compile with -lib hxssl to enable TLS support.";
+			#end
+		}else{
+			s = new sys.net.Socket();
+		}
 		try {
 			s.bind(new sys.net.Host(host),port);
 		} catch( e : Dynamic ) {
@@ -951,14 +962,28 @@ class Tora {
 				if( hp.length != 2 ) throw "Unsafe format should be host:port";
 				var port = Std.parseInt(hp[1]);
 				inst.ports.push(port);
-				unsafe.add( { host : hp[0], port : port } );
+				unsafe.add( { host : hp[0], port : port, tls: null } );
+
+			case "-unsafeTLS":
+				var hp = value().split(":");
+				if( hp.length != 2 ) throw "Unsafe format should be host:port";
+				var port = Std.parseInt(hp[1]);
+				inst.ports.push(port);
+				unsafe.add( { host : hp[0], port : port, tls: {key: value(), cert: value()} } );
 
 			case "-websocket":
 				var hp = value().split(":");
 				if( hp.length != 2 ) throw "WebSocket format should be host:port";
 				var port = Std.parseInt(hp[1]);
 				inst.ports.push(port);
-				websocket.add({ host : hp[0], port : port });
+				websocket.add({ host : hp[0], port : port, tls: null });
+
+			case "-websocketTLS":
+				var hp = value().split(":");
+				if( hp.length != 2 ) throw "WebSocket format should be host:port";
+				var port = Std.parseInt(hp[1]);
+				inst.ports.push(port);
+				websocket.add({ host : hp[0], port : port, tls: {key: value(), cert: value()} });
 			
 			case "-debugPort":
 				debugPort = Std.parseInt(value());
@@ -975,22 +1000,22 @@ class Tora {
 			log("Opening debug port on " + host + ":" + debugPort);
 			inst.debugQueue = new neko.vm.Deque();
 			inst.startup(1, inst.debugQueue);
-			neko.vm.Thread.create(inst.run.bind(host, debugPort, TMDebug));
+			neko.vm.Thread.create(inst.run.bind(host, debugPort, TMDebug, null));
 		}
 		for( u in unsafe ) {
 			log("Opening unsafe port on "+u.host+":"+u.port);
-			neko.vm.Thread.create(inst.run.bind(u.host, u.port, TMUnsafe));
+			neko.vm.Thread.create(inst.run.bind(u.host, u.port, TMUnsafe, u.tls));
 		}
 		for( u in websocket ) {
 			log("Opening websocket port on "+u.host+":"+u.port);
-			neko.vm.Thread.create(inst.run.bind(u.host,u.port, TMWebSocket));
+			neko.vm.Thread.create(inst.run.bind(u.host,u.port, TMWebSocket, u.tls));
 		}
 		log("Starting Tora server on " + host + ":" + port + " with " + nthreads + " threads");
 		
 		if ( fcgiMode )
-			inst.run(host, port, TMFastCGI);
+			inst.run(host, port, TMFastCGI, null);
 		else
-			inst.run(host, port, TMRegular);
+			inst.run(host, port, TMRegular, null);
 		
 		inst.stop();
 	}
